@@ -1,0 +1,13 @@
+data/
+outputs/
+models/
+checkpoints/
+.venv/
+
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+*.pth
+*.pt
+*.ckpt
