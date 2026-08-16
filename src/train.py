@@ -41,6 +41,7 @@ def parse_args():
     parser.add_argument("--aux-weight", type=float, default=0.35)
     parser.add_argument("--blend-aux", type=float, default=0.25)
     parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--train-csv", type=Path, default=None)
     return parser.parse_args()
 
 
@@ -115,7 +116,7 @@ def main():
     checkpoint_dir = args.out_dir / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    train_csv = args.data_dir / "train.csv"
+    train_csv = args.train_csv if args.train_csv is not None else args.data_dir / "train.csv"
     train_df = pd.read_csv(train_csv)
     image_dir = find_image_dir(args.data_dir)
 
