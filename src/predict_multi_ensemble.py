@@ -28,8 +28,40 @@ def parse_args():
     return parser.parse_args()
 
 
+def resolve_checkpoint_path(path: Path) -> Path:
+    if path.exists():
+        return path
+    candidates = [
+        path,
+        Path.cwd() / path.name,
+        Path.cwd() / "outputs" / "checkpoints" / path.name,
+        Path.cwd() / "outputs_pseudo" / "checkpoints" / path.name,
+        Path.cwd() / "outputs_convnext" / "checkpoints" / path.name,
+        Path("/kaggle/working") / "outputs" / "checkpoints" / path.name,
+        Path("/kaggle/working") / "outputs_pseudo" / "checkpoints" / path.name,
+        Path("/kaggle/working/octwave-kaggle") / "outputs" / "checkpoints" / path.name,
+        Path("/kaggle/working/octwave-kaggle") / "outputs_pseudo" / "checkpoints" / path.name,
+    ]
+    for c in candidates:
+        if c.exists():
+            print(f"[!] Auto-resolved checkpoint {path.name} -> {c}")
+            return c
+
+    for search_root in [Path.cwd(), Path("/kaggle/working"), Path("/kaggle/input")]:
+        if search_root.exists():
+            matches = list(search_root.rglob(path.name))
+            if len(matches) > 0:
+                print(f"[!] Auto-resolved checkpoint {path.name} -> {matches[0]}")
+                return matches[0]
+
+    raise FileNotFoundError(
+        f"Could not find checkpoint '{path.name}' anywhere in working directory or /kaggle inputs."
+    )
+
+
 def load_model(checkpoint_path: Path, device):
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    resolved_path = resolve_checkpoint_path(checkpoint_path)
+    checkpoint = torch.load(resolved_path, map_location=device)
     model = CharacterPresenceModel(checkpoint["arch"], pretrained=False).to(device)
     model.load_state_dict(checkpoint["model"])
     model.eval()
