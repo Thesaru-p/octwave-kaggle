@@ -13,12 +13,19 @@ from torchvision import models, transforms
 
 SUPPORTED_ARCHES = [
     "convnext_tiny",
+    "convnext_small",
+    "convnext_base",
     "efficientnet_b0",
     "efficientnet_b1",
     "efficientnet_b2",
     "efficientnet_b3",
     "efficientnet_b4",
     "efficientnet_v2_s",
+    "efficientnet_v2_m",
+    "densenet121",
+    "resnet50",
+    "resnext50_32x4d",
+    "swin_t",
 ]
 
 
@@ -39,48 +46,107 @@ def seed_everything(seed: int) -> None:
 
 
 def find_image_dir(data_dir: Path) -> Path:
-    candidates = [data_dir / "images", data_dir / "images" / "images"]
+    candidates = [
+        data_dir / "images",
+        data_dir / "images" / "images",
+        data_dir / "train",
+        data_dir / "test",
+    ]
     for candidate in candidates:
         if candidate.exists() and any(candidate.glob("*.jpg")):
             return candidate
+    # Fallback search
+    for p in data_dir.rglob("*.jpg"):
+        return p.parent
     raise FileNotFoundError(f"Could not find jpg images under {data_dir}")
 
 
-def make_train_transform(image_size: int) -> transforms.Compose:
-    return transforms.Compose(
-        [
-            transforms.RandomResizedCrop(image_size, scale=(0.72, 1.0), ratio=(0.9, 1.1)),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomApply(
-                [
-                    transforms.ColorJitter(
-                        brightness=0.22,
-                        contrast=0.22,
-                        saturation=0.18,
-                        hue=0.035,
-                    )
-                ],
-                p=0.8,
-            ),
-            transforms.RandomRotation(degrees=8),
-            transforms.RandomPerspective(distortion_scale=0.12, p=0.2),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            transforms.RandomErasing(p=0.18, scale=(0.02, 0.12), ratio=(0.3, 3.3)),
-        ]
-    )
+class AspectPreservingResizePad:
+    """Maintains cartoon aspect ratio and centers image in target canvas."""
+    def __init__(self, target_size: int = 300, fill: int = 0):
+        self.target_size = target_size
+        self.fill = fill
+
+    def __call__(self, img: Image.Image) -> Image.Image:
+        w, h = img.size
+        scale = self.target_size / max(w, h)
+        new_w = max(1, int(w * scale))
+        new_h = max(1, int(h * scale))
+
+        img_resized = img.resize((new_w, new_h), Image.BICUBIC)
+        new_img = Image.new("RGB", (self.target_size, self.target_size), (self.fill, self.fill, self.fill))
+        pad_x = (self.target_size - new_w) // 2
+        pad_y = (self.target_size - new_h) // 2
+        new_img.paste(img_resized, (pad_x, pad_y))
+        return new_img
 
 
-def make_eval_transform(image_size: int) -> transforms.Compose:
-    resize_size = int(image_size * 1.14)
-    return transforms.Compose(
-        [
-            transforms.Resize((resize_size, resize_size)),
-            transforms.CenterCrop(image_size),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-        ]
-    )
+def make_train_transform(image_size: int, use_aspect_pad: bool = True) -> transforms.Compose:
+    if use_aspect_pad:
+        return transforms.Compose(
+            [
+                AspectPreservingResizePad(target_size=image_size),
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.RandomApply(
+                    [
+                        transforms.ColorJitter(
+                            brightness=0.20,
+                            contrast=0.20,
+                            saturation=0.15,
+                            hue=0.03,
+                        )
+                    ],
+                    p=0.8,
+                ),
+                transforms.RandomRotation(degrees=10),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                transforms.RandomErasing(p=0.15, scale=(0.02, 0.10), ratio=(0.3, 3.3)),
+            ]
+        )
+    else:
+        return transforms.Compose(
+            [
+                transforms.RandomResizedCrop(image_size, scale=(0.85, 1.0), ratio=(0.9, 1.1)),
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.RandomApply(
+                    [
+                        transforms.ColorJitter(
+                            brightness=0.20,
+                            contrast=0.20,
+                            saturation=0.15,
+                            hue=0.03,
+                        )
+                    ],
+                    p=0.8,
+                ),
+                transforms.RandomRotation(degrees=10),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                transforms.RandomErasing(p=0.15, scale=(0.02, 0.10), ratio=(0.3, 3.3)),
+            ]
+        )
+
+
+def make_eval_transform(image_size: int, use_aspect_pad: bool = True) -> transforms.Compose:
+    if use_aspect_pad:
+        return transforms.Compose(
+            [
+                AspectPreservingResizePad(target_size=image_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ]
+        )
+    else:
+        resize_size = int(image_size * 1.12)
+        return transforms.Compose(
+            [
+                transforms.Resize((resize_size, resize_size)),
+                transforms.CenterCrop(image_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ]
+        )
 
 
 class TomJerryDataset(Dataset):
@@ -114,23 +180,28 @@ class CharacterPresenceModel(nn.Module):
         self.arch = arch
         weights = "DEFAULT" if pretrained else None
 
-        if arch == "convnext_tiny":
-            base = models.convnext_tiny(weights=weights)
+        if arch.startswith("convnext_"):
+            base = getattr(models, arch)(weights=weights)
             feature_dim = base.classifier[2].in_features
             self.backbone = nn.Sequential(base.features, base.avgpool, nn.Flatten(1))
-        elif arch in {
-            "efficientnet_b0",
-            "efficientnet_b1",
-            "efficientnet_b2",
-            "efficientnet_b3",
-            "efficientnet_b4",
-            "efficientnet_v2_s",
-        }:
+        elif arch.startswith("efficientnet"):
             base = getattr(models, arch)(weights=weights)
             feature_dim = base.classifier[1].in_features
             self.backbone = nn.Sequential(base.features, base.avgpool, nn.Flatten(1))
+        elif arch.startswith("densenet"):
+            base = getattr(models, arch)(weights=weights)
+            feature_dim = base.classifier.in_features
+            self.backbone = nn.Sequential(base.features, nn.ReLU(inplace=True), nn.AdaptiveAvgPool2d((1, 1)), nn.Flatten(1))
+        elif arch.startswith("resnet") or arch.startswith("resnext"):
+            base = getattr(models, arch)(weights=weights)
+            feature_dim = base.fc.in_features
+            self.backbone = nn.Sequential(*list(base.children())[:-1], nn.Flatten(1))
+        elif arch == "swin_t":
+            base = models.swin_t(weights=weights)
+            feature_dim = base.head.in_features
+            self.backbone = nn.Sequential(base.features, base.norm, base.permute, base.avgpool, base.flatten)
         else:
-            raise ValueError(f"Unsupported arch: {arch}. Choose one of: {SUPPORTED_ARCHES}")
+            raise ValueError(f"Unsupported arch: {arch}. Choose from: {SUPPORTED_ARCHES}")
 
         self.dropout = nn.Dropout(dropout)
         self.class_head = nn.Linear(feature_dim, 4)
