@@ -48,8 +48,42 @@ def normalize_weights(weights, n):
     return [w / total for w in weights]
 
 
+def resolve_checkpoint_path(path: Path) -> Path:
+    if path.exists():
+        return path
+    candidates = [
+        path,
+        Path.cwd() / path.name,
+        Path.cwd() / "outputs" / "checkpoints" / path.name,
+        Path.cwd() / "outputs_pseudo" / "checkpoints" / path.name,
+        Path.cwd() / "outputs_convnext" / "checkpoints" / path.name,
+        Path("/kaggle/working") / "outputs" / "checkpoints" / path.name,
+        Path("/kaggle/working") / "outputs_pseudo" / "checkpoints" / path.name,
+        Path("/kaggle/working/octwave-kaggle") / "outputs" / "checkpoints" / path.name,
+        Path("/kaggle/working/octwave-kaggle") / "outputs_pseudo" / "checkpoints" / path.name,
+    ]
+    for c in candidates:
+        if c.exists():
+            print(f"[!] Auto-resolved checkpoint {path.name} -> {c}")
+            return c
+
+    # Recursive search across /kaggle/working and /kaggle/input
+    for search_root in [Path.cwd(), Path("/kaggle/working"), Path("/kaggle/input")]:
+        if search_root.exists():
+            matches = list(search_root.rglob(path.name))
+            if len(matches) > 0:
+                print(f"[!] Auto-resolved checkpoint {path.name} -> {matches[0]}")
+                return matches[0]
+
+    raise FileNotFoundError(
+        f"Could not find checkpoint '{path.name}' anywhere in working directory or /kaggle inputs. "
+        f"Please check your trained checkpoints directory."
+    )
+
+
 def load_model(checkpoint_path: Path, device):
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    resolved_path = resolve_checkpoint_path(checkpoint_path)
+    checkpoint = torch.load(resolved_path, map_location=device)
     arch = checkpoint.get("arch", "efficientnet_b3")
     model = CharacterPresenceModel(arch, pretrained=False).to(device)
     model.load_state_dict(checkpoint["model"])
