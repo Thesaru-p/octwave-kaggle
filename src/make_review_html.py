@@ -21,6 +21,8 @@ def parse_args():
     parser.add_argument("--out", type=Path, default=Path("outputs/review.html"))
     parser.add_argument("--limit", type=int, default=200)
     parser.add_argument("--sort-by", choices=["confidence", "margin"], default="margin")
+    parser.add_argument("--match-diagnostics", type=Path, default=None)
+    parser.add_argument("--only-unmatched", action="store_true")
     return parser.parse_args()
 
 
@@ -31,8 +33,8 @@ def image_path(data_dir: Path, filename: str) -> str:
     ]
     for candidate in candidates:
         if candidate.exists():
-            return str(candidate)
-    return str(candidates[-1])
+            return candidate.resolve().as_uri()
+    return candidates[-1].resolve().as_uri()
 
 
 def main():
@@ -40,6 +42,13 @@ def main():
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
     probs = pd.read_csv(args.probs)
+    if args.only_unmatched:
+        if args.match_diagnostics is None:
+            raise ValueError("--only-unmatched requires --match-diagnostics")
+        diagnostics = pd.read_csv(args.match_diagnostics)
+        unmatched = set(diagnostics.loc[diagnostics["match_source"] == "model", "filename"])
+        probs = probs[probs["filename"].isin(unmatched)].copy()
+        print(f"unmatched_rows={len(probs)}")
     review = probs.sort_values(args.sort_by, ascending=True).head(args.limit).copy()
 
     rows = []

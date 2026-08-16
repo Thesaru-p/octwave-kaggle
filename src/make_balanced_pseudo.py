@@ -4,32 +4,26 @@ import argparse
 from pathlib import Path
 
 import pandas as pd
+from make_pseudo_train import exclude_matched
+
+
+CLASS_THRESHOLDS = {
+    0: {"min_conf": 0.92, "min_margin": 0.60},
+    1: {"min_conf": 0.96, "min_margin": 0.70},
+    2: {"min_conf": 0.94, "min_margin": 0.65},
+    3: {"min_conf": 0.86, "min_margin": 0.45},
+}
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--probs", type=Path, required=True)
-    parser.add_argument("--out", type=Path, default=Path("outputs/train_pseudo.csv"))
-    parser.add_argument("--min-confidence", type=float, default=0.98)
-    parser.add_argument("--min-margin", type=float, default=0.75)
-    parser.add_argument("--max-per-class", type=int, default=400)
+    parser.add_argument("--out", type=Path, default=Path("outputs/train_pseudo_balanced.csv"))
+    parser.add_argument("--max-per-class", type=int, default=300)
     parser.add_argument("--exclude-csv", type=Path, default=None)
     parser.add_argument("--exclude-sources", nargs="*", default=["md5", "phash", "dino"])
     return parser.parse_args()
-
-
-def exclude_matched(probs: pd.DataFrame, exclude_csv: Path | None, exclude_sources: list[str]) -> pd.DataFrame:
-    if exclude_csv is None:
-        return probs
-    excluded = pd.read_csv(exclude_csv)
-    if "match_source" in excluded.columns:
-        matched = excluded[excluded["match_source"].isin(exclude_sources)]["filename"]
-    else:
-        matched = excluded["filename"]
-    keep = ~probs["filename"].isin(set(matched))
-    print(f"excluded_matched_rows={int((~keep).sum())}")
-    return probs.loc[keep].copy()
 
 
 def main():
@@ -39,16 +33,23 @@ def main():
     train = pd.read_csv(args.data_dir / "train.csv")
     probs = exclude_matched(pd.read_csv(args.probs), args.exclude_csv, args.exclude_sources)
 
-    pseudo = probs[
-        (probs["confidence"] >= args.min_confidence)
-        & (probs["margin"] >= args.min_margin)
-    ][["filename", "appearance", "confidence", "margin"]].copy()
+    pseudo_dfs = []
+    for cls, threshold in CLASS_THRESHOLDS.items():
+        cls_df = probs[probs["appearance"] == cls].copy()
+        if "prob_tom" in cls_df.columns and "prob_jerry" in cls_df.columns and cls == 3:
+            selected = cls_df[(cls_df["prob_tom"] >= 0.85) & (cls_df["prob_jerry"] >= 0.80)]
+        else:
+            selected = cls_df[
+                (cls_df["confidence"] >= threshold["min_conf"]) & (cls_df["margin"] >= threshold["min_margin"])
+            ]
+        selected = selected.sort_values(["confidence", "margin"], ascending=[False, False]).head(args.max_per_class)
+        pseudo_dfs.append(selected)
 
+    non_empty = [frame for frame in pseudo_dfs if len(frame)]
     pseudo = (
-        pseudo.sort_values(["appearance", "confidence", "margin"], ascending=[True, False, False])
-        .groupby("appearance", group_keys=False)
-        .head(args.max_per_class)
-        .reset_index(drop=True)
+        pd.concat(non_empty, ignore_index=True)
+        if non_empty
+        else pd.DataFrame(columns=["filename", "appearance"])
     )
 
     train_out = train.copy()

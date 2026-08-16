@@ -49,7 +49,7 @@ def find_image_dir(data_dir: Path) -> Path:
 def make_train_transform(image_size: int) -> transforms.Compose:
     return transforms.Compose(
         [
-            transforms.RandomResizedCrop(image_size, scale=(0.72, 1.0), ratio=(0.9, 1.1)),
+            transforms.RandomResizedCrop(image_size, scale=(0.85, 1.0), ratio=(0.9, 1.1)),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
                 [
@@ -72,11 +72,9 @@ def make_train_transform(image_size: int) -> transforms.Compose:
 
 
 def make_eval_transform(image_size: int) -> transforms.Compose:
-    resize_size = int(image_size * 1.14)
     return transforms.Compose(
         [
-            transforms.Resize((resize_size, resize_size)),
-            transforms.CenterCrop(image_size),
+            transforms.Resize((image_size, image_size)),
             transforms.ToTensor(),
             transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ]
