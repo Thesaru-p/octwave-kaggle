@@ -61,92 +61,41 @@ def find_image_dir(data_dir: Path) -> Path:
     raise FileNotFoundError(f"Could not find jpg images under {data_dir}")
 
 
-class AspectPreservingResizePad:
-    """Maintains cartoon aspect ratio and centers image in target canvas."""
-    def __init__(self, target_size: int = 300, fill: int = 0):
-        self.target_size = target_size
-        self.fill = fill
-
-    def __call__(self, img: Image.Image) -> Image.Image:
-        w, h = img.size
-        scale = self.target_size / max(w, h)
-        new_w = max(1, int(w * scale))
-        new_h = max(1, int(h * scale))
-
-        img_resized = img.resize((new_w, new_h), Image.BICUBIC)
-        new_img = Image.new("RGB", (self.target_size, self.target_size), (self.fill, self.fill, self.fill))
-        pad_x = (self.target_size - new_w) // 2
-        pad_y = (self.target_size - new_h) // 2
-        new_img.paste(img_resized, (pad_x, pad_y))
-        return new_img
-
-
-def make_train_transform(image_size: int, use_aspect_pad: bool = True) -> transforms.Compose:
-    if use_aspect_pad:
-        return transforms.Compose(
-            [
-                AspectPreservingResizePad(target_size=image_size),
-                transforms.RandomHorizontalFlip(p=0.5),
-                transforms.RandomApply(
-                    [
-                        transforms.ColorJitter(
-                            brightness=0.20,
-                            contrast=0.20,
-                            saturation=0.15,
-                            hue=0.03,
-                        )
-                    ],
-                    p=0.8,
-                ),
-                transforms.RandomRotation(degrees=10),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-                transforms.RandomErasing(p=0.15, scale=(0.02, 0.10), ratio=(0.3, 3.3)),
-            ]
-        )
-    else:
-        return transforms.Compose(
-            [
-                transforms.RandomResizedCrop(image_size, scale=(0.85, 1.0), ratio=(0.9, 1.1)),
-                transforms.RandomHorizontalFlip(p=0.5),
-                transforms.RandomApply(
-                    [
-                        transforms.ColorJitter(
-                            brightness=0.20,
-                            contrast=0.20,
-                            saturation=0.15,
-                            hue=0.03,
-                        )
-                    ],
-                    p=0.8,
-                ),
-                transforms.RandomRotation(degrees=10),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-                transforms.RandomErasing(p=0.15, scale=(0.02, 0.10), ratio=(0.3, 3.3)),
-            ]
-        )
+def make_train_transform(image_size: int) -> transforms.Compose:
+    return transforms.Compose(
+        [
+            transforms.RandomResizedCrop(image_size, scale=(0.72, 1.0), ratio=(0.9, 1.1)),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomApply(
+                [
+                    transforms.ColorJitter(
+                        brightness=0.22,
+                        contrast=0.22,
+                        saturation=0.18,
+                        hue=0.035,
+                    )
+                ],
+                p=0.8,
+            ),
+            transforms.RandomRotation(degrees=8),
+            transforms.RandomPerspective(distortion_scale=0.12, p=0.2),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            transforms.RandomErasing(p=0.18, scale=(0.02, 0.12), ratio=(0.3, 3.3)),
+        ]
+    )
 
 
-def make_eval_transform(image_size: int, use_aspect_pad: bool = True) -> transforms.Compose:
-    if use_aspect_pad:
-        return transforms.Compose(
-            [
-                AspectPreservingResizePad(target_size=image_size),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            ]
-        )
-    else:
-        resize_size = int(image_size * 1.12)
-        return transforms.Compose(
-            [
-                transforms.Resize((resize_size, resize_size)),
-                transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            ]
-        )
+def make_eval_transform(image_size: int) -> transforms.Compose:
+    resize_size = int(image_size * 1.14)
+    return transforms.Compose(
+        [
+            transforms.Resize((resize_size, resize_size)),
+            transforms.CenterCrop(image_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ]
+    )
 
 
 class TomJerryDataset(Dataset):
