@@ -9,6 +9,7 @@ import pandas as pd
 import torch
 from common import (
     CharacterPresenceModel,
+    SUPPORTED_ARCHES,
     TomJerryDataset,
     class_logits_from_character_logits,
     find_image_dir,
@@ -27,7 +28,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--out-dir", type=Path, default=Path("outputs"))
-    parser.add_argument("--arch", choices=["convnext_tiny", "efficientnet_b3", "efficientnet_b0"], default="convnext_tiny")
+    parser.add_argument("--arch", choices=SUPPORTED_ARCHES, default="convnext_tiny")
     parser.add_argument("--image-size", type=int, default=384)
     parser.add_argument("--epochs", type=int, default=18)
     parser.add_argument("--fold", type=int, default=0)

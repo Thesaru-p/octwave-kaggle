@@ -11,6 +11,17 @@ from torch.utils.data import Dataset
 from torchvision import models, transforms
 
 
+SUPPORTED_ARCHES = [
+    "convnext_tiny",
+    "efficientnet_b0",
+    "efficientnet_b1",
+    "efficientnet_b2",
+    "efficientnet_b3",
+    "efficientnet_b4",
+    "efficientnet_v2_s",
+]
+
+
 LABEL_TO_CHARACTERS = {
     0: (0.0, 0.0),
     1: (1.0, 0.0),
@@ -107,16 +118,19 @@ class CharacterPresenceModel(nn.Module):
             base = models.convnext_tiny(weights=weights)
             feature_dim = base.classifier[2].in_features
             self.backbone = nn.Sequential(base.features, base.avgpool, nn.Flatten(1))
-        elif arch == "efficientnet_b3":
-            base = models.efficientnet_b3(weights=weights)
-            feature_dim = base.classifier[1].in_features
-            self.backbone = nn.Sequential(base.features, base.avgpool, nn.Flatten(1))
-        elif arch == "efficientnet_b0":
-            base = models.efficientnet_b0(weights=weights)
+        elif arch in {
+            "efficientnet_b0",
+            "efficientnet_b1",
+            "efficientnet_b2",
+            "efficientnet_b3",
+            "efficientnet_b4",
+            "efficientnet_v2_s",
+        }:
+            base = getattr(models, arch)(weights=weights)
             feature_dim = base.classifier[1].in_features
             self.backbone = nn.Sequential(base.features, base.avgpool, nn.Flatten(1))
         else:
-            raise ValueError(f"Unsupported arch: {arch}")
+            raise ValueError(f"Unsupported arch: {arch}. Choose one of: {SUPPORTED_ARCHES}")
 
         self.dropout = nn.Dropout(dropout)
         self.class_head = nn.Linear(feature_dim, 4)
