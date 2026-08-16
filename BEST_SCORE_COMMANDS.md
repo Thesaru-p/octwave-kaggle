@@ -78,3 +78,27 @@ Create a multi-size weighted ensemble using B0 folds plus B3:
 ```
 
 If the B3 single model scores poorly, reduce its ensemble weight or remove it.
+
+## Nearest-Neighbor Frame Matching
+
+This approach uses a trained model as an embedding extractor. For each test image, it finds the most visually similar train images and predicts by weighted k-nearest-neighbor voting. It can also blend kNN probabilities with the model's normal class probabilities.
+
+Start with the best B3 folds:
+
+```python
+!python src/predict_knn.py \
+  --data-dir /kaggle/input/competitions/oct-wave-3-0-kaggle-challenge-02 \
+  --checkpoints \
+  /kaggle/working/outputs/checkpoints/efficientnet_b3_fold0_best.pt \
+  /kaggle/working/outputs/checkpoints/efficientnet_b3_fold1_best.pt \
+  /kaggle/working/outputs/checkpoints/efficientnet_b3_fold2_best.pt \
+  --weights 1.0 0.8 1.0 \
+  --k 7 \
+  --temperature 0.07 \
+  --model-prob-weight 0.25 \
+  --tta \
+  --out /kaggle/working/submission_knn_b3_3fold.csv \
+  --diagnostics-out /kaggle/working/knn_b3_3fold_diagnostics.csv
+```
+
+If this changes too many predictions and scores worse, increase `--model-prob-weight` to `0.5`. If it changes too few predictions, reduce it to `0.0` and test pure kNN.
